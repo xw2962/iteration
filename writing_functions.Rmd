@@ -1,0 +1,231 @@
+---
+title: "writing_functions"
+author: "Xiaoyu Wu"
+date: "2023-10-25"
+output: github_document
+---
+
+```{r setup}
+library(tidyverse)
+library(rvest)
+
+set.seed(1)
+```
+
+## Do something simple 
+```{r}
+x_vec = rnorm(30, mean = 5, sd = 3)
+# 30 vectors taking the mean of 5 and sd of 3 
+(x_vec - mean(x_vec)) / sd(x_vec)
+# z-scores: subtracted by the mean and divided by sd
+```
+I wanta function to compute z-scores 
+```{r}
+z_scores = function(x) {
+# argument is x and inside the brackets 
+# input is x everywhere 
+  z = (x - mean(x)) / sd(x)
+# body and operation 
+  return(z)
+# return objects   
+}
+
+z_scores(x_vec)
+```
+Try my functions on some other thing 
+```{r}
+z_scores = function(x) {
+  
+  if (!is.numeric(x)) {
+    stop("Argument x should be numeric")
+  } else if (length(x) == 1) {
+    stop("Z scores cannot be computed for length 1 vectors")
+  }
+# update teh function 
+  z = mean(x) / sd(x)
+  
+  z
+}
+# add some checks 
+```
+
+## Multiple outputs 
+store each of the values in a named list
+```{r}
+mean_and_sd = function(x) {
+  
+  if (!is.numeric(x)) {
+    stop("Argument x should be numeric")
+  } else if (length(x) == 1) {
+    stop("Cannot be computed for length 1 vectors")
+  }
+  
+  mean_x = mean(x)
+  sd_x = sd(x)
+
+  list(mean = mean_x, 
+       sd = sd_x)
+}
+mean_and_sd(x_vec)
+```
+store values in a data frame
+```{r}
+mean_and_sd = function(x) {
+  
+  if (!is.numeric(x)) {
+    stop("Argument x should be numeric")
+  } else if (length(x) == 1) {
+    stop("Cannot be computed for length 1 vectors")
+  }
+  
+  mean_x = mean(x)
+  sd_x = sd(x)
+
+  tibble(
+    mean = mean_x, 
+    sd = sd_x
+  )
+}
+mean_and_sd(x_vec)
+```
+
+## Multiple inputs
+```{r}
+sim_data = tibble(
+  x = rnorm(30, mean = 2, sd = 3)
+)
+
+sim_data %>% 
+  summarize(
+    mu_hat = mean(x),
+    sigma_hat = sd(x)
+  )
+```
+I'd like to do this in a function 
+```{r}
+sim_mean_sd = function(sample_size, mu, sigma) {
+# true population mean mu and true population sd sigma.
+# (sample_size, mu=3, sigma=4) default values 
+  sim_data = tibble(
+    x = rnorm(n=sample_size, mean = mu, sd = sigma),
+  )
+# inputs  
+  sim_data %>% 
+    summarize(
+      mu_hat = mean(x),
+      sigma_hat = sd(x)
+    )
+# return objects 
+}
+sim_mean_sd(sample_size=100,mu=6,sigma=3)
+```
+
+## Revisiting past examples
+Scraping Amazon
+```{r}
+url = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber=1"
+
+html = read_html(url)
+
+review_profile = 
+    html %>%
+    html_nodes(".a-profile-content") %>%
+    html_text()
+  
+  review_stars = 
+    html %>%
+    html_nodes(".review-rating") %>%
+    html_text() %>%
+    str_extract("^\\d") %>%
+    as.numeric()
+  
+  review_date = 
+    html %>%
+    html_nodes(".review-date") %>%
+    html_text() 
+
+reviews=
+    tibble(
+    profile = review_profile,
+    stars = review_stars,
+    date = review_date
+)
+reviews
+```
+Let's turn that code into a function 
+```{r}
+read_page_reviews = function(url) {
+# input is the url 
+  html = read_html(url)
+  
+  review_profile = 
+    html %>%
+    html_nodes(".a-profile-content") %>%
+    html_text()
+  
+  review_stars = 
+    html %>%
+    html_nodes(".review-rating") %>%
+    html_text() %>%
+    str_extract("^\\d") %>%
+    as.numeric()
+  
+  review_date = 
+    html %>%
+    html_nodes(".review-date") %>%
+    html_text() 
+  
+  reviews=
+    tibble(
+    profile = review_profile,
+    stars = review_stars,
+    date = review_date
+  )
+  # body and operations   
+  reviews
+# return objects 
+}
+
+dynamite_url = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber=1"
+read_page_reviews(dynamite_url)
+```
+read in reviews from a few pages and combine the results
+```{r}
+url_base = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber="
+vec_urls = str_c(url_base, 1:5)
+
+dynamite_reviews = bind_rows(
+  read_page_reviews(vec_urls[1]),
+  read_page_reviews(vec_urls[2]),
+  read_page_reviews(vec_urls[3]),
+  read_page_reviews(vec_urls[4]),
+  read_page_reviews(vec_urls[5])
+)
+```
+
+## Mean scoping example 
+```{r}
+f = function(x) {
+  z = x + y
+  z
+}
+
+x = 1
+y = 2
+
+f(x = y)
+# y is the needed value for x 
+```
+
+## Functions as arguments
+```{r}
+x_vec = rnorm(25, 0, 1)
+
+my_summary = function(x, summ_func) {
+  summ_func(x)
+}
+mean(x_vec)
+median(x_vec)
+my_summary(x_vec, mean)
+# reorder summ_func according to the mean 
+```
