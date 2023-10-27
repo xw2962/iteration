@@ -264,6 +264,7 @@ nsduh_table <- function(html, table_num, table_name) {
   
   table = 
     html |> 
+# argument
     html_table() |> 
     nth(table_num) |>
     slice(-1) |> 

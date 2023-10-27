@@ -1,0 +1,288 @@
+---
+title: "iteration_and_listcols"
+author: "Xiaoyu Wu"
+date: "2023-10-27"
+output: github_document
+---
+
+```{r}
+library(tidyverse)
+
+set.seed(1)
+```
+
+## List
+You can put anything in the list
+```{r}
+vec_numeric = 5:8
+vec_char = c("My", "name", "is", "Jeff")
+vec_logical = c(TRUE, TRUE, TRUE, FALSE)
+mat= matrix(1:8, nrow=2, ncol=4)
+# matrix contains number 1 to 8 
+summary = summary(rnorm(1000))
+```
+store everything in the list 
+```{r}
+l = list(
+  vec_numeric = 5:8,
+  mat         = matrix(1:8, 2, 4),
+  vec_logical = c(TRUE, FALSE),
+  summary     = summary(rnorm(1000)))
+l
+```
+
+```{r}
+l$vec_numeric
+l[[1]]
+# access individual elements in the list 
+l[[1]][1:3]
+```
+
+## `for` loops
+new list 
+```{r}
+list_norms = 
+  list(
+    a = rnorm(20, 3, 1),
+    b = rnorm(20, 0, 5),
+    c = rnorm(20, 10, .2),
+    d = rnorm(20, -3, 1)
+  )
+list_norms
+is.list(list_norms)
+```
+
+```{r}
+mean_and_sd = function(x) {
+  
+  if (!is.numeric(x)) {
+    stop("Argument x should be numeric")
+  } else if (length(x) == 1) {
+    stop("Cannot be computed for length 1 vectors")
+  }
+  
+  mean_x = mean(x)
+  sd_x = sd(x)
+
+  tibble(
+    mean = mean_x, 
+    sd = sd_x
+  )
+}
+```
+apply simple mean_and_sd function to list_norm 
+```{r}
+mean_and_sd(list_norms[[1]])
+mean_and_sd(list_norms[[2]])
+mean_and_sd(list_norms[[3]])
+mean_and_sd(list_norms[[4]])
+```
+Let's use a for loop: 
+```{r}
+output = vector("list", length = 4)
+# define an output list with the same number of entries as my target dataframe
+for (i in 1:4) {
+  output[[i]] = mean_and_sd(list_norms[[i]])
+}
+output
+```
+
+## Let's try map
+```{r}
+output = map(list_norms, mean_and_sd)
+# The first argument to map is the list we want to iterate over, and the second argument is the function we want to apply to each element.
+output = map(.x = list_norms, ~ mean_and_sd(.x))
+# be more specific in giving arguments to map
+```
+
+## map variants
+```{r}
+output = map_dbl(list_norms, median, .id = "input")
+# Using the .id argument keeps the names of the elements in the input list.
+# put the names of each list into a new variable called "input"
+```
+
+```{r}
+output = map_dfr(list_norms, mean_and_sd, .id = "input")
+# this will produce a single data frame.
+# map_int or map_lgl, integer or a logical.
+```
+
+```{r}
+output = map2(.x = input_1, .y = input_2, ~func(arg_1 = .x, arg_2 = .y))
+# we have two arguments
+```
+
+## List columns and operations
+```{r}
+listcol_df = 
+  tibble(
+    name = c("a", "b", "c", "d"),
+    samp = list_norms
+  )
+```
+
+```{r}
+listcol_df %>% pull(name)
+```
+
+```{r}
+listcol_df %>% pull(samp)
+```
+
+```{r}
+listcol_df$samp[[1]]
+```
+
+```{r}
+listcol_df |> 
+  filter(name=="a")
+```
+
+apply mean_and_sd to the first element of our list column
+```{r}
+mean_and_sd(listcol_df$samp[[1]])
+```
+
+```{r}
+map(listcol_df$samp, mean_and_sd)
+```
+store the results as a new list column
+```{r}
+listcol_df = 
+  listcol_df %>% 
+  mutate(summary = map(samp, mean_and_sd))
+
+listcol_df
+```
+## Nested data
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728", "USC00519397", "USS0023B17S"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(
+      id, 
+      USW00094728 = "CentralPark_NY", 
+      USC00519397 = "Waikiki_HA",
+      USS0023B17S = "Waterhole_WA"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+Weather data will be separated into three station-specific data frames
+```{r}
+weather_nest = 
+  nest(weather_df, data = date:tmin)
+
+weather_nest
+```
+
+```{r}
+weather_nest %>% pull(name)
+```
+
+```{r}
+weather_nest %>% pull(data)
+```
+unnesting 
+```{r}
+unnest(weather_nest, cols = data)
+```
+ fit the simple linear regression relating tmax to tmin
+```{r}
+weather_lm = function(df) {
+  lm(tmax ~ tmin, data = df)
+}
+```
+apply our weather_lm function to each data frame using map
+```{r}
+map(weather_nest$data, weather_lm)
+map(weather_nest$data, ~lm(tmax ~ tmin, data = .x))
+# avoid the creation of a dedicated function
+```
+using a for loop:
+```{r}
+output=vector("list",3)
+
+for (i in 1:3) {
+  output[[i]]=weather_lm(weather_nest$data[[i]])
+}
+output
+```
+
+mutate to fit this model, and to store the result in the same dataframe
+What about a amap in a list column!!!!!??
+```{r}
+weather_nest = 
+  weather_nest %>% 
+  mutate(models = map(data, weather_lm))
+
+weather_nest
+```
+
+## Revisiting Napoleon
+```{r}
+read_page_reviews <- function(url) {
+  
+  html = read_html(urls[1])
+  
+  review_titles = 
+    html %>%
+    html_nodes(".a-text-bold span") %>%
+    html_text() %>% 
+    magrittr::extract(3*(1:10))
+  
+  review_stars = 
+    html %>%
+    html_nodes("#cm_cr-review_list .review-rating") %>%
+    html_text() %>%
+    str_extract("^\\d") %>%
+    as.numeric()
+  
+  review_text = 
+    html %>%
+    html_nodes(".review-text-content span") %>%
+    html_text() %>% 
+    str_replace_all("\n", "") %>% 
+    str_trim() %>% 
+    str_subset("The media could not be loaded.", negate = TRUE) %>% 
+    str_subset("^$", negate = TRUE)
+  
+  tibble(
+    title = review_titles,
+    stars = review_stars,
+    text = review_text
+  )
+}
+```
+five pages of reviews 
+```{r}
+url_base = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber="
+vec_urls = str_c(url_base, 1:5)
+```
+
+```{r}
+output = vector("list", 5)
+
+for (i in 1:5) {
+  output[[i]] = read_page_reviews(vec_urls[[i]])
+}
+
+dynamite_reviews = bind_rows(output)
+
+dynamite_reviews = map_df(vec_urls, read_page_reviews)
+```
+
+```{r}
+dynamite_reviews = 
+  tibble(
+    page = 1:5,
+    urls = str_c(url_base, page)) %>% 
+  mutate(reviews = map(urls, read_page_reviews)) %>% 
+  unnest()
+```
+
