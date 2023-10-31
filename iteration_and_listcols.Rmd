@@ -7,7 +7,7 @@ output: github_document
 
 ```{r}
 library(tidyverse)
-
+library(rvest)
 set.seed(1)
 ```
 
@@ -29,6 +29,7 @@ l = list(
   vec_logical = c(TRUE, FALSE),
   summary     = summary(rnorm(1000)))
 l
+# list can have different vectors with different lengths
 ```
 
 ```{r}
@@ -36,6 +37,7 @@ l$vec_numeric
 l[[1]]
 # access individual elements in the list 
 l[[1]][1:3]
+# access the 1st and 3rd elements in the first vector of the list 
 ```
 
 ## `for` loops
@@ -79,12 +81,16 @@ mean_and_sd(list_norms[[4]])
 ```
 Let's use a for loop: 
 ```{r}
-output = vector("list", length = 4)
-# define an output list with the same number of entries as my target dataframe
+output_mean_and_sd = vector("list", length = 4)
+output_median = vector("list", length = 4)
+# define two output lists with the same number of entries as my target dataframe
 for (i in 1:4) {
-  output[[i]] = mean_and_sd(list_norms[[i]])
+  output_mean_and_sd[[i]] = mean_and_sd(list_norms[[i]])
+  output_median[[i]] = median(list_norms[[i]])
 }
-output
+# input is list_norms 
+output_mean_and_sd
+output_median
 ```
 
 ## Let's try map
@@ -109,8 +115,7 @@ output = map_dfr(list_norms, mean_and_sd, .id = "input")
 ```
 
 ```{r}
-output = map2(.x = input_1, .y = input_2, ~func(arg_1 = .x, arg_2 = .y))
-# we have two arguments
+# output = map2(input_1, input_2, \(x,y) func(arg_1 = x, arg_2 = y))
 ```
 
 ## List columns and operations
@@ -151,10 +156,66 @@ store the results as a new list column
 ```{r}
 listcol_df = 
   listcol_df %>% 
-  mutate(summary = map(samp, mean_and_sd))
-
+  mutate(summary = map(samp, mean_and_sd))  %>% 
+  select(name,summary) %>%
+  unnest(summary)
 listcol_df
 ```
+## Revisiting NSDUH
+```{r}
+nsduh_table <- function(html, table_num) {
+  
+  table = 
+    html |> 
+    html_table() |> 
+    nth(table_num) |>
+    slice(-1) |> 
+    select(-contains("P Value")) |>
+    pivot_longer(
+      -State,
+      names_to = "age_year", 
+      values_to = "percent") |>
+    separate(age_year, into = c("age", "year"), sep = "\\(") |>
+    mutate(
+      year = str_replace(year, "\\)", ""),
+      percent = str_replace(percent, "[a-c]$", ""),
+      percent = as.numeric(percent)) |>
+    filter(!(State %in% c("Total U.S.", "Northeast", "Midwest", "South", "West")))
+  
+  table
+}
+```
+
+```{r}
+nsduh_url = "http://samhda.s3-us-gov-west-1.amazonaws.com/s3fs-public/field-uploads/2k15StateFiles/NSDUHsaeShortTermCHG2015.htm"
+
+nsduh_html = read_html(nsduh_url)
+
+output = vector("list", 3)
+
+for (i in c(1, 4, 5)) {
+  output[[i]] = nsduh_table(nsduh_html, i)
+}
+
+nsduh_results = bind_rows(output)
+```
+
+```{r}
+nsduh_results = 
+  map(c(1, 4, 5), nsduh_table, html = nsduh_html) |> 
+# I’m supplying the html argument after the name of the function that I’m iterating over.
+  bind_rows()
+```
+
+```{r}
+nsduh_results= 
+  tibble(
+    name = c("marj", "cocaine", "heroine"),
+    number = c(1, 4, 5)) |> 
+  mutate(table = map(number, \(num) nsduh_table(html = nsduh_html, num))) |> 
+  unnest(cols = "table")
+```
+
 ## Nested data
 ```{r}
 weather_df = 
@@ -222,67 +283,5 @@ weather_nest =
   mutate(models = map(data, weather_lm))
 
 weather_nest
-```
-
-## Revisiting Napoleon
-```{r}
-read_page_reviews <- function(url) {
-  
-  html = read_html(urls[1])
-  
-  review_titles = 
-    html %>%
-    html_nodes(".a-text-bold span") %>%
-    html_text() %>% 
-    magrittr::extract(3*(1:10))
-  
-  review_stars = 
-    html %>%
-    html_nodes("#cm_cr-review_list .review-rating") %>%
-    html_text() %>%
-    str_extract("^\\d") %>%
-    as.numeric()
-  
-  review_text = 
-    html %>%
-    html_nodes(".review-text-content span") %>%
-    html_text() %>% 
-    str_replace_all("\n", "") %>% 
-    str_trim() %>% 
-    str_subset("The media could not be loaded.", negate = TRUE) %>% 
-    str_subset("^$", negate = TRUE)
-  
-  tibble(
-    title = review_titles,
-    stars = review_stars,
-    text = review_text
-  )
-}
-```
-five pages of reviews 
-```{r}
-url_base = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber="
-vec_urls = str_c(url_base, 1:5)
-```
-
-```{r}
-output = vector("list", 5)
-
-for (i in 1:5) {
-  output[[i]] = read_page_reviews(vec_urls[[i]])
-}
-
-dynamite_reviews = bind_rows(output)
-
-dynamite_reviews = map_df(vec_urls, read_page_reviews)
-```
-
-```{r}
-dynamite_reviews = 
-  tibble(
-    page = 1:5,
-    urls = str_c(url_base, page)) %>% 
-  mutate(reviews = map(urls, read_page_reviews)) %>% 
-  unnest()
 ```
 
